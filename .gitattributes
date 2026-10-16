@@ -1,0 +1,2 @@
+# Git on Windows may check files out with CRLF line endings, which bash inside the container can't run
+*.sh text eol=lf

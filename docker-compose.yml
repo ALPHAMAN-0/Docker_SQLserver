@@ -1,7 +1,7 @@
 # One SQL Server for all your .NET projects.
-#   docker compose up -d                  start the server, then run every scripts/*.sql
-#   docker compose logs sqlserver-init    see what the scripts did
-#   docker compose stop                   stop (data is kept)
+#   docker compose up -d                      start the server and the scripts/ watcher
+#   cat scripts-run.log                       see what the last save did
+#   docker compose stop                       stop (data is kept)
 # Databases live in the "mssql-data" volume, so they survive container rebuilds.
 # Only "docker volume rm mssql-data" deletes them.
 name: sqlserver
@@ -19,7 +19,7 @@ services:
       MSSQL_PID: "Developer"
       MSSQL_SA_PASSWORD: *sa-password
     ports:
-      - "127.0.0.1:1433:1433" # only this computer can connect, not others on your Wi-Fi
+      - "1433:1433" # all of the Mac's addresses, so the UTM Windows VM can use 192.168.64.1,1433
     volumes:
       - mssql-data:/var/opt/mssql
     restart: unless-stopped
@@ -30,28 +30,24 @@ services:
       retries: 12
       start_period: 20s
 
-  # Waits until the server is ready, runs scripts/*.sql in name order, then exits.
-  # It runs on every "up", so scripts must be safe to re-run (use IF NOT EXISTS).
-  sqlserver-init:
+  # Every time you save a file in scripts/, deletes DB_NAME and rebuilds it from scripts/*.sql.
+  # Output of the last run goes to scripts-run.log. The logic is in sql-watch.sh.
+  sqlserver-watch:
     image: mcr.microsoft.com/mssql/server:2022-latest
     platform: linux/amd64
-    container_name: sqlserver-init
+    container_name: sqlserver-watch
+    user: root # on Linux the image's own user (10001) can't write scripts-run.log into your folder
     depends_on:
       sqlserver:
         condition: service_healthy
     environment:
       MSSQL_SA_PASSWORD: *sa-password
+      DB_NAME: section_b
+      TZ: ${TZ:-UTC} # timestamps in scripts-run.log
     volumes:
-      - ./scripts:/scripts:ro
-    entrypoint: ["/bin/bash", "-c"]
-    command:
-      - |
-        for f in /scripts/*.sql; do
-          echo "Running $$f"
-          /opt/mssql-tools18/bin/sqlcmd -S sqlserver -U sa -P "$$MSSQL_SA_PASSWORD" -C -b -i "$$f" || exit 1
-        done
-        echo "All scripts finished"
-    restart: "no"
+      - ./:/work # reads scripts/, writes scripts-run.log
+    entrypoint: ["/bin/bash", "/work/sql-watch.sh"]
+    restart: unless-stopped
 
 volumes:
   mssql-data:

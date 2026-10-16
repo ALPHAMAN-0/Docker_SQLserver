@@ -1,7 +1,8 @@
 # SQL Server in Docker (shared by all .NET projects)
 
 SQL Server 2022 in Docker for .NET development on macOS, including Apple Silicon.
-One `docker compose up -d` starts the server and creates your databases and tables from the SQL scripts in `scripts/`.
+One `docker compose up -d` starts the server and builds the `section_b` database from `scripts/01_section_b.sql`.
+After that, every time you save that file, the database is rebuilt from it automatically.
 
 Pairs with [EFBoilerplate](https://github.com/ALPHAMAN-0/EFBoilerplate), a `dotnet new` template for ASP.NET Core MVC + EF Core that's already connected to this database.
 
@@ -11,12 +12,20 @@ Pairs with [EFBoilerplate](https://github.com/ALPHAMAN-0/EFBoilerplate), a `dotn
 | User     | `sa`                                   |
 | Password | the one you set in `.env` (see Setup)  |
 
-The port is bound to `127.0.0.1`, so only your own computer can connect.
+Port 1433 is open on all of the Mac's network addresses, so a Windows VM in UTM can connect too (see [Windows VM in UTM](#windows-vm-in-utm)).
+Other devices on the same Wi-Fi can reach the port as well, so keep a strong SA password.
 
 ## Setup
 
 You need [Docker Desktop](https://www.docker.com/products/docker-desktop/).
 On Apple Silicon, turn on **Settings → General → Use Rosetta for x86_64/amd64 emulation**, because SQL Server has no ARM image.
+
+It works the same on macOS, Windows and Linux:
+
+- **Windows:** Docker Desktop with the WSL 2 backend. Commands work in PowerShell as written.
+- **Linux:** Docker Engine with the `docker compose` plugin, or Docker Desktop.
+  Docker skips `ufw`, so port 1433 is open to your network even if the firewall is on.
+- **ARM PCs** (Windows on Snapdragon, Raspberry Pi) aren't supported. SQL Server only runs on Intel/AMD, and only Macs have Rosetta to translate it.
 
 ```sh
 git clone https://github.com/ALPHAMAN-0/docker-sqlserver.git
@@ -30,19 +39,32 @@ docker compose up -d
 ## Start / stop
 
 ```sh
-docker compose up -d                  # start the server and run every scripts/*.sql
-docker compose logs sqlserver-init    # see what the scripts did
-docker compose stop                   # stop (data is kept)
+docker compose up -d                       # start the server and the scripts/ watcher
+docker compose logs -f sqlserver-watch     # follow every rebuild live
+docker compose stop                        # stop (data is kept)
 ```
 
-The server also starts by itself whenever Docker Desktop starts. That doesn't re-run the scripts; only `docker compose up -d` does.
+Both containers also start by themselves whenever Docker Desktop starts.
 Your databases are stored in the `mssql-data` volume, so they survive container rebuilds. Only `docker volume rm mssql-data` deletes them.
 
-## Tables are created automatically
+## Save the SQL file, the database is rebuilt
 
-On every `docker compose up -d`, the `sqlserver-init` container waits for the server, runs each file in `scripts/` in name order, and then exits.
+The `sqlserver-watch` container checks `scripts/` every second. When you save `scripts/01_section_b.sql`, it:
 
-`scripts/01_section_b.sql` creates the `section_b` database with these tables:
+1. deletes the `section_b` database (anyone connected to it, like SSMS or a running app, is disconnected),
+2. creates it again, empty,
+3. runs the whole file inside it, from the first `CREATE TABLE` to the last query,
+4. writes everything sqlcmd printed (rows from your `SELECT`s, errors, `=== OK` or `=== FAILED`) to `scripts-run.log`.
+
+So write plain SQL with no `IF NOT EXISTS` checks, and leave out `CREATE DATABASE` and `USE`.
+Use `GO` before statements that must start a batch, like `CREATE VIEW` or `CREATE PROCEDURE`.
+If the run stops at an error, fix the line `scripts-run.log` points to and save again.
+
+**Every save erases data your apps added to `section_b`.** Put rows you want to keep as `INSERT`s in the file.
+Restarting Docker or the Mac doesn't rebuild anything unless the file changed while the watcher was off.
+The logic is in `sql-watch.sh`, and the database name is `DB_NAME` in `docker-compose.yml`.
+
+`scripts/01_section_b.sql` currently creates these tables:
 
 | Table       | Columns                                       | Sample rows |
 |-------------|-----------------------------------------------|-------------|
@@ -50,18 +72,15 @@ On every `docker compose up -d`, the `sqlserver-init` container waits for the se
 | `students`  | id, name, dept, cgpa                          | 3 |
 | `employees` | id, email, name, designation, age, salary     | 5 |
 
-**To add your own tables**, create a new file such as `scripts/02_lab5.sql` and run `docker compose up -d`.
-The scripts run again on every `up`, so guard each statement so it only runs once:
+**To add your own table**, add it to the file and save:
 
 ```sql
-USE section_b;
-GO
-IF OBJECT_ID('dbo.courses', 'U') IS NULL
-    CREATE TABLE dbo.courses (
-        id    INT IDENTITY(1,1) PRIMARY KEY,
-        title NVARCHAR(MAX) NOT NULL
-    );
-GO
+CREATE TABLE dbo.courses (
+    id    INT IDENTITY(1,1) PRIMARY KEY,
+    title NVARCHAR(MAX) NOT NULL
+);
+INSERT INTO dbo.courses (title) VALUES ('C#'), ('Databases');
+SELECT * FROM dbo.courses;   -- result shows up in scripts-run.log
 ```
 
 ## Start a new project: `dotnet new efmvc`
@@ -86,6 +105,16 @@ Put this in `appsettings.Development.json` (keep that file out of git) and chang
 
 Code that uses `Server=(localdb)\\MSSQLLocalDB;...;Trusted_Connection=True` only works on Windows.
 On the Mac, replace it with the string above.
+
+## Windows VM in UTM
+
+With UTM's network mode set to **Shared Network** (the default), the Mac is the VM's gateway.
+In Windows, run `ipconfig` and note the **Default Gateway**, usually `192.168.64.1`.
+
+- **SSMS:** Server name `192.168.64.1,1433`, **SQL Server Authentication**, login `sa`, your password from `.env`, tick **Trust server certificate**.
+- **Visual Studio:** use the connection string above with `Server=192.168.64.1,1433`.
+
+To check the connection, run `Test-NetConnection 192.168.64.1 -Port 1433` in PowerShell. It should print `TcpTestSucceeded : True`.
 
 ## DBeaver
 

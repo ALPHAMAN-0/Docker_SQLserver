@@ -1,3 +1,5 @@
 .DS_Store
 # holds your real SA password
 .env
+# output of the last scripts/ run
+scripts-run.log
