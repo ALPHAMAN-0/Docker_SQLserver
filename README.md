@@ -4,6 +4,30 @@ SQL Server 2022 in Docker for .NET development on macOS, including Apple Silicon
 One `docker compose up -d` starts the server and builds the `section_b` database from `scripts/01_section_b.sql`.
 After that, every time you save that file, the database is rebuilt from it automatically.
 
+## Architecture / How it Works
+
+```mermaid
+erDiagram
+    USER ||--o{ ORDER : places
+    ORDER ||--|{ ITEM : contains
+    USER {
+        int id PK
+        string name
+        string email
+    }
+    ORDER {
+        int id PK
+        date created_at
+        int user_id FK
+    }
+    ITEM {
+        int id PK
+        string title
+        int order_id FK
+    }
+```
+
+
 Pairs with [EFBoilerplate](https://github.com/ALPHAMAN-0/EFBoilerplate), a `dotnet new` template for ASP.NET Core MVC + EF Core that's already connected to this database.
 
 | Setting  | Value                                  |
