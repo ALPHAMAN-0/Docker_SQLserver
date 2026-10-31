@@ -2,5 +2,4 @@
 # holds your real SA password
 # output of the last scripts/ run
 scripts-run.log
-config.bat
 node_modules
