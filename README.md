@@ -64,15 +64,15 @@ If the run stops at an error, fix the line `scripts-run.log` points to and save 
 Restarting Docker or the Mac doesn't rebuild anything unless the file changed while the watcher was off.
 The logic is in `sql-watch.sh`, and the database name is `DB_NAME` in `docker-compose.yml`.
 
-`scripts/01_section_b.sql` currently creates these tables:
+`scripts/01_section_b.sql` currently creates no tables, so `section_b` starts out empty.
+Create tables yourself (for example with EF Core migrations), or add them to the file.
 
-| Table       | Columns                                       | Sample rows |
-|-------------|-----------------------------------------------|-------------|
-| `products`  | id, name, description, price, stock, category | 3 |
-| `students`  | id, name, dept, cgpa                          | 3 |
-| `employees` | id, email, name, designation, age, salary     | 5 |
+`scripts/02_storeDb.sql` builds a second database, `storeDb`, with a `Products` table
+(`Id`, `Name`, `Category`, `Price`, `Stock`, `AddedAt`) and 5 sample rows.
+It deletes and recreates `storeDb` itself on every save, so it's the one file that uses `CREATE DATABASE` and `USE`.
+To use it from .NET, set `Database=storeDb` in the connection string.
 
-**To add your own table**, add it to the file and save:
+**To have a table created automatically**, add it to the file and save:
 
 ```sql
 CREATE TABLE dbo.courses (
